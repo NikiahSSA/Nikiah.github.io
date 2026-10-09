@@ -36,11 +36,12 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid 
 <header><h1>Daily Report & Time Tracker</h1>
 <input type="date" id="date" style="width:auto"><button class="btn" id="today">Today</button>
 <nav id="nav"></nav><button class="btn" id="out">Sign out</button><span id="st"></span></header>
-<div id="login" style="display:none;position:fixed;inset:0;z-index:9;background:var(--bg);align-items:center;justify-content:center"><div class="card" style="width:320px"><h2>Sign in</h2><div class="g"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"><button class="btn pri" id="go">Sign in</button><span class="note" id="lerr"></span></div></div></div>
+<div id="login" style="display:none;position:fixed;inset:0;z-index:9;background:var(--bg);align-items:center;justify-content:center"><div class="card" style="width:320px"><h2>Sign in</h2><div class="g"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"><button class="btn pri" id="go">Sign in</button><a href="#" id="fg" class="note">Forgot password / set password</a><span class="note" id="lerr"></span></div></div></div>
+<div id="setpw" style="display:none;position:fixed;inset:0;z-index:9;background:var(--bg);align-items:center;justify-content:center"><div class="card" style="width:320px"><h2>Set your password</h2><div class="g"><input id="np" type="password" placeholder="New password (8+ characters)" autocomplete="new-password"><button class="btn pri" id="sp">Save password</button><span class="note" id="serr"></span></div></div></div>
 <main id="app"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
-const SUPABASE_URL="https://vfbubuovrqwcvifpdyyi.supabase.co",SUPABASE_KEY="sb_publishable_fWxvwbHV5XqVVBRb_rYtvg_UvPMLfvM";
+const SUPABASE_URL="https://vfbubuovrqwcvifpdyyi.supabase.co",SUPABASE_KEY="sb_publishable_fWxvwbHV5XqVVBRb_rYtvg_UvPMLfvM"; // see SETUP.md
 let sb=null,ready=false;
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ROLES=['Superintendent','Project Manager','Project Engineer','Carpenter Foreman','Carpenters','Laborer Foreman','Laborers','Others'];
@@ -136,13 +137,16 @@ $('#date').addEventListener('change',()=>{manual=$('#date').value!==iso(new Date
 $('#today').addEventListener('click',()=>{manual=false;$('#date').value=iso(new Date());loadDay()});
 function syncToday(){const t=iso(new Date());if(!manual&&$('#date').value!==t){$('#date').value=t;loadDay()}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncToday()});addEventListener('focus',syncToday);setInterval(syncToday,60000);
+const needPw=/type=(invite|recovery)/.test(location.hash);
 async function start(){$('#login').style.display='none';ready=true;const saved=await get('config/project');if(saved)Object.assign(cfg,saved);cfg.subs=cfg.subs||[];cfg.codes=cfg.codes||[];if(!cfg.jobNo)tab='set';await loadDay();status('Synced')}
 $('#go').onclick=async()=>{const{error}=await sb.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});if(error)$('#lerr').textContent=error.message;else start()};
+$('#sp').onclick=async()=>{const p=$('#np').value;if(p.length<8){$('#serr').textContent='Use at least 8 characters.';return}const{error}=await sb.auth.updateUser({password:p});if(error)$('#serr').textContent=error.message;else{history.replaceState(null,'',location.pathname);$('#setpw').style.display='none';start()}};
+$('#fg').onclick=async e=>{e.preventDefault();const em=$('#em').value;if(!em){$('#lerr').textContent='Enter your email above first.';return}const{error}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname});$('#lerr').textContent=error?error.message:'Check your email for a link to set your password.'};
 $('#pw').addEventListener('keydown',e=>{if(e.key==='Enter')$('#go').click()});
 $('#out').onclick=async()=>{await sb.auth.signOut();location.reload()};
 (async()=>{$('#date').value=iso(new Date());
  if(SUPABASE_URL.startsWith('YOUR')||!window.supabase){document.body.innerHTML='<p style="padding:20px">Set SUPABASE_URL and SUPABASE_KEY at the top of the script (see SETUP.md).</p>';return}
  sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
  const{data:{session}}=await sb.auth.getSession();
- if(session)start();else $('#login').style.display='flex'})();
+ if(session&&needPw)$('#setpw').style.display='flex';else if(session)start();else $('#login').style.display='flex'})();
 </script></body></html>
