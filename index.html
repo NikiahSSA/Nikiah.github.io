@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Daily Reports & Time Tracking</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f4f5f7;--card:#fff;--tx:#1d2330;--mu:#667085;--bd:#d6dae1;--ac:#1f5fbf;--ac2:#e8f0fc}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171c;--card:#1d222a;--tx:#e8ebf0;--mu:#98a1b0;--bd:#343b47;--ac:#6ea3f2;--ac2:#243247}}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--card);border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+header h1{font-size:16px;margin:0 8px 0 0}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button,.btn{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:6px 11px;border-radius:6px;cursor:pointer;font:inherit}
+nav button.on,.btn.pri{background:var(--ac);border-color:var(--ac);color:#fff}
+main{max-width:1000px;margin:0 auto;padding:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:12px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--mu);margin:0 0 8px}
+input,select,textarea{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:5px;padding:5px 7px;width:100%;min-width:0}
+textarea{min-height:70px;resize:vertical}
+.g{display:grid;gap:8px}.g2{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.row{display:grid;gap:6px;margin-bottom:6px;align-items:center}
+.r-staff{grid-template-columns:150px 1fr 60px}.r-sub{grid-template-columns:1fr 70px 70px 30px}.r-pair{grid-template-columns:1fr 70px 30px}
+.r-ev{grid-template-columns:170px 1fr 30px}.r-time{grid-template-columns:1.2fr 1fr 82px 82px 58px 52px 1fr 52px 62px 62px 1fr 26px}
+.x{border:0;background:none;color:var(--mu);cursor:pointer;font-size:16px}
+.lbl{font-size:12px;color:var(--mu)}.tot{font-weight:600;margin-top:6px}
+.media{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-top:8px}
+.media figure{margin:0;border:1px solid var(--bd);border-radius:6px;padding:4px;position:relative}
+.media img,.media video{width:100%;height:120px;object-fit:cover;border-radius:4px;display:block;cursor:pointer}
+.media figure .x{position:absolute;top:2px;right:4px;background:#000a;color:#fff;border-radius:50%;width:22px;height:22px;line-height:20px;padding:0}
+.media input{margin-top:4px;font-size:12px}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{border:1px solid var(--bd);padding:5px 7px;text-align:center}th:first-child,td:first-child{text-align:left}th{background:var(--ac2)}
+.wrap{overflow-x:auto}.note{color:var(--mu);font-size:12px}#st{font-size:12px;color:var(--mu);margin-left:auto}
+@media(max-width:700px){.r-time{grid-template-columns:1fr 1fr}.r-staff{grid-template-columns:1fr 50px}.r-ev{grid-template-columns:1fr 30px}}
+@media print{header,.noprint,.x,#mediaUp{display:none!important}body{background:#fff;color:#000}.card{break-inside:avoid;border-color:#999}input,textarea,select{border:0;background:none;color:#000}.pv{display:block!important}}
+.pv{display:none}
+</style></head><body>
+<header><h1>Daily Report & Time Tracker</h1>
+<input type="date" id="date" style="width:auto"><button class="btn" id="today">Today</button>
+<nav id="nav"></nav><button class="btn" id="out">Sign out</button><span id="st"></span></header>
+<div id="login" style="display:none;position:fixed;inset:0;z-index:9;background:var(--bg);align-items:center;justify-content:center"><div class="card" style="width:320px"><h2>Sign in</h2><div class="g"><input id="em" type="email" placeholder="Email" autocomplete="username"><input id="pw" type="password" placeholder="Password" autocomplete="current-password"><button class="btn pri" id="go">Sign in</button><span class="note" id="lerr"></span></div></div></div>
+<main id="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const SUPABASE_URL="YOUR_SUPABASE_URL",SUPABASE_KEY="YOUR_SUPABASE_ANON_KEY"; // see SETUP.md
+let sb=null,ready=false;
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ROLES=['Superintendent','Project Manager','Project Engineer','Carpenter Foreman','Carpenters','Laborer Foreman','Laborers','Others'];
+const STAFF={Superintendent:'super','Project Manager':'pm','Project Engineer':'pe','Carpenter Foreman':'cf','Laborer Foreman':'lf'};
+const TABS=[['report','Daily Report'],['time','Time Cards'],['week','Weekly Timesheet'],['set','Project Setup']];
+let db=null,assets=null,downloads=null,uid='me',tab='report',cfg={jobNo:'',jobName:'',super:'',pm:'',pe:'',cf:'',lf:'',subs:[],codes:[]},day=null,week={},timers={};
+const memStore={};
+const iso=d=>{const x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0')};
+const blank=()=>({weather:'',hi:'',lo:'',safety:'',hindrance:'',present:{},subs:cfg.subs.map(n=>({name:n,count:'',rcv:false})),insp:[{name:'',count:''}],vis:[{name:'',count:''}],events:[{co:'Goudy',text:''}],time:[],media:[],pmInit:'',sig:''});
+function status(t){$('#st').textContent=t}
+async function get(path){const{data,error}=await sb.from('docs').select('data').eq('path',path).maybeSingle();if(error){status('Load failed: '+error.message);return null}return data?data.data:null}
+function put(path,data){clearTimeout(timers[path]);status('Saving…');const body=JSON.parse(JSON.stringify(data,(k,v)=>k==='url'?undefined:v));
+ timers[path]=setTimeout(async()=>{const{error}=await sb.from('docs').upsert({path,data:body,updated_at:new Date().toISOString()});status(error?'Save failed: '+error.message:'Saved ✓')},500)}
+async function signMedia(){const ms=(day.media||[]).filter(m=>m.path);if(!ms.length)return;const{data}=await sb.storage.from('media').createSignedUrls(ms.map(m=>m.path),43200);(data||[]).forEach((r,i)=>{ms[i].url=r.signedUrl})}
+const saveDay=()=>put('days/'+$('#date').value,day),saveCfg=()=>put('config/project',cfg);
+async function loadDay(){if(!ready)return;const d=$('#date').value;day=Object.assign(blank(),await get('days/'+d)||{});if(day.subs===undefined)day.subs=[];await signMedia();render()}
+async function loadWeek(){const d=new Date($('#date').value+'T12:00');const m=new Date(d);m.setDate(d.getDate()-((d.getDay()+6)%7));week={};
+ for(let i=0;i<7;i++){const x=new Date(m);x.setDate(m.getDate()+i);const k=iso(x);week[k]=(k===$('#date').value&&day)?day:await get('days/'+k)}}
+function hrs(t){if(!t.start||!t.end)return 0;const a=t.start.split(':'),b=t.end.split(':');let m=(+b[0]*60+ +b[1])-(+a[0]*60+ +a[1]);if(m<0)m+=1440;return Math.max(0,(m-(+t.brk||0))/60)}
+const f1=n=>(Math.round(n*100)/100).toString();
+function counts(){const c={};ROLES.forEach(r=>{const names=new Set(day.time.filter(t=>t.role===r&&t.emp).map(t=>t.emp.trim().toLowerCase()));c[r]=names.size||((STAFF[r]&&day.present[r])?1:0)});return c}
+const split=t=>{const h=hrs(t),a=+t.ot15||0,b=+t.ot2||0;return[Math.max(0,h-a-b),a,b]};
+const sum=a=>a.reduce((s,x)=>s+(+x.count||0),0);
+function totals(){const c=counts(),g=ROLES.reduce((s,r)=>s+c[r],0);const set=(i,v)=>{const e=$('#'+i);if(e)e.textContent=v};
+ ROLES.forEach((r,i)=>set('c'+i,c[r]||''));set('tg',g);set('ti',sum(day.insp));set('tv',sum(day.vis));set('ts',sum(day.subs));
+ const T=[0,0,0,0];day.time.forEach((t,i)=>{const[r,a,b]=split(t);set('h'+i,f1(hrs(t)));set('r'+i,f1(r));T[0]+=hrs(t);T[1]+=r;T[2]+=a;T[3]+=b});set('tt',f1(T[0]));set('tr',f1(T[1]));set('t15',f1(T[2]));set('t2',f1(T[3]))}
+function nav(){$('#nav').innerHTML=TABS.map(([k,l])=>`<button class="${k===tab?'on':''}" data-tab="${k}">${l}</button>`).join('')}
+async function render(){nav();const a=$('#app');
+ if(tab==='set')a.innerHTML=setupHTML();else if(tab==='time')a.innerHTML=timeHTML();else if(tab==='week'){await loadWeek();a.innerHTML=weekHTML()}else a.innerHTML=reportHTML();
+ if(tab==='report'||tab==='time')totals()}
+function hdr(){return `<div class="card"><div class="g g2"><div><span class="lbl">Job Number</span><input data-cfg="jobNo" value="${esc(cfg.jobNo)}" placeholder="e.g. 26-013"></div><div><span class="lbl">Job Name</span><input data-cfg="jobName" value="${esc(cfg.jobName)}" placeholder="Job name"></div><div><span class="lbl">Date</span><div><b>${new Date($('#date').value+'T12:00').toLocaleDateString(undefined,{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</b></div></div></div></div>`}
+const B=(p,v,ph='')=>`<input data-b="${p}" value="${esc(v)}" placeholder="${ph}">`;
+function reportHTML(){const d=day;return hdr()+`
+<div class="card"><h2>Weather</h2><div class="g g2"><div><span class="lbl">Summary & changes</span>${B('weather',d.weather)}</div><div><span class="lbl">Hi Temp</span>${B('hi',d.hi)}</div><div><span class="lbl">Low Temp</span>${B('lo',d.lo)}</div></div></div>
+<div class="card"><h2>Goudy Employees</h2>${ROLES.map((r,i)=>{const k=STAFF[r];return `<div class="row r-staff"><b>${r}:</b><span>${k?esc(cfg[k]):'<span class="note">From time cards</span>'}</span>${k?`<label><input type="checkbox" style="width:auto" data-pr="${r}" ${d.present[r]?'checked':''}> on site</label>`:''}<span></span></div>`.replace('<span></span></div>','</div>')+`<div class="note" style="margin:-4px 0 6px 150px">Count: <b id="c${i}"></b></div>`}).join('')}<div class="tot">Total Goudy Manpower: <span id="tg"></span></div></div>
+<div class="card"><h2>Subcontractors on Site</h2><div class="row r-sub lbl"><span>Company</span><span># Employees</span><span>Report rcvd</span><span></span></div>
+${d.subs.map((s,i)=>`<div class="row r-sub">${B('subs.'+i+'.name',s.name)}<input type="number" min="0" data-b="subs.${i}.count" value="${esc(s.count)}"><label><input type="checkbox" style="width:auto" data-bc="subs.${i}.rcv" ${s.rcv?'checked':''}> rcvd</label><button class="x" data-del="subs.${i}">✕</button></div>`).join('')}
+<button class="btn" data-add="subs">+ Subcontractor</button><button class="btn" data-prefill style="margin-left:6px">Pre-fill from setup</button><div class="tot">Total Subcontractor Manpower: <span id="ts"></span></div></div>
+${['insp:Inspections (Company & Name)','vis:Visitors to the Site (Company & Names)'].map(x=>{const[k,l]=x.split(':');return `<div class="card"><h2>${l}</h2>${d[k].map((s,i)=>`<div class="row r-pair">${B(k+'.'+i+'.name',s.name)}<input type="number" min="0" data-b="${k}.${i}.count" value="${esc(s.count)}" placeholder="# on-site"><button class="x" data-del="${k}.${i}">✕</button></div>`).join('')}<button class="btn" data-add="${k}">+ Add</button><div class="tot">Total: <span id="${k==='insp'?'ti':'tv'}"></span></div></div>`}).join('')}
+<div class="card"><h2>Safety Issues or Concerns</h2><textarea data-b="safety">${esc(d.safety)}</textarea></div>
+<div class="card"><h2>Hindrance to Progress of Work</h2><textarea data-b="hindrance">${esc(d.hindrance)}</textarea><p class="note">If anything is noted here, communicate it to the project manager.</p></div>
+<div class="card"><h2>Daily Events</h2><p class="note">Work in progress by all subcontractors and Goudy (what & where) · meetings held · change directives (who gave / who received).</p>
+${d.events.map((e,i)=>`<div class="row r-ev">${B('events.'+i+'.co',e.co,'Company')}<textarea data-b="events.${i}.text" style="min-height:40px">${esc(e.text)}</textarea><button class="x" data-del="events.${i}">✕</button></div>`).join('')}<button class="btn" data-add="events">+ Entry</button></div>
+<div class="card"><h2>Photos & Videos</h2><div class="noprint"><input type="file" id="mediaUp" accept="image/*,video/*" multiple> <span class="note" id="upn"></span></div>
+<div class="media">${d.media.map((m,i)=>`<figure>${m.video?`<video src="${esc(m.url)}" controls preload="metadata"></video>`:`<img src="${esc(m.url)}" alt="" data-open="${esc(m.url)}">`}<button class="x" data-del="media.${i}">✕</button><input data-b="media.${i}.cap" value="${esc(m.cap||'')}" placeholder="Caption / location"></figure>`).join('')||'<span class="note">No media for this day.</span>'}</div></div>
+<div class="card"><h2>Sign-off</h2><div class="g g2"><div><span class="lbl">PM Initials</span>${B('pmInit',d.pmInit)}</div><div><span class="lbl">Superintendent Signature</span>${B('sig',d.sig||cfg.super)}</div><div><span class="lbl">Copies to</span><div>Jobsite File · Project Manager (Home Office File)</div></div></div>
+<p class="noprint" style="margin-bottom:0"><button class="btn pri" onclick="print()">Print / Save as PDF</button></p></div>`}
+function timeHTML(){return hdr()+`<div class="card"><h2>Time Cards — ${$('#date').value}</h2><div class="row r-time lbl"><span>Employee</span><span>Role</span><span>Start</span><span>End</span><span>Break</span><span>Total</span><span>Cost code</span><span>Reg</span><span>OT 1.5×</span><span>OT 2.0×</span><span>Notes</span><span></span></div>
+${day.time.map((t,i)=>`<div class="row r-time">${B('time.'+i+'.emp',t.emp,'Name')}<select data-b="time.${i}.role" data-re>${ROLES.map(r=>`<option ${r===t.role?'selected':''}>${r}</option>`).join('')}</select><input type="time" data-b="time.${i}.start" value="${t.start||''}"><input type="time" data-b="time.${i}.end" value="${t.end||''}"><input type="number" min="0" data-b="time.${i}.brk" value="${esc(t.brk)}"><b id="h${i}"></b><input list="codes" data-b="time.${i}.code" value="${esc(t.code)}" placeholder="Code"><b id="r${i}"></b><input type="number" min="0" step="0.25" data-b="time.${i}.ot15" value="${esc(t.ot15)}"><input type="number" min="0" step="0.25" data-b="time.${i}.ot2" value="${esc(t.ot2)}">${B('time.'+i+'.notes',t.notes)}<button class="x" data-del="time.${i}">✕</button></div>`).join('')||'<p class="note">No time entries yet.</p>'}
+<button class="btn pri" data-add="time">+ Add employee</button><datalist id="codes">${cfg.codes.map(c=>`<option value="${esc(c.split("|")[0].trim())}">${esc(c.split("|")[1]||"")}</option>`).join("")}</datalist><div class="tot">Total hours: <span id="tt"></span> · Regular: <span id="tr"></span> · OT 1.5×: <span id="t15"></span> · OT 2.0×: <span id="t2"></span></div><p class="note">Regular = total − OT hours. Enter OT hours by hand for each line. Counts for Carpenters, Laborers and Others on the Daily Report come from these cards.</p></div>`}
+function weekHTML(){const ks=Object.keys(week),emp={},cc={};ks.forEach(k=>(week[k]?.time||[]).forEach(t=>{if(!t.emp)return;const n=t.emp.trim(),e=emp[n]??={role:t.role,h:{},r:0,a:0,b:0};e.h[k]=(e.h[k]||0)+hrs(t);const[r,a,b]=split(t);e.r+=r;e.a+=a;e.b+=b;if(t.code){const c=cc[t.code]??={r:0,a:0,b:0};c.r+=r;c.a+=a;c.b+=b}}));
+ const names=Object.keys(emp).sort(),dt=ks.map(k=>names.reduce((s,n)=>s+(emp[n].h[k]||0),0));
+ return hdr()+`<div class="card"><h2>Week of ${ks[0]}</h2><div class="wrap"><table><tr><th>Employee</th><th>Role</th>${ks.map(k=>`<th>${new Date(k+'T12:00').toLocaleDateString(undefined,{weekday:'short',month:'numeric',day:'numeric'})}</th>`).join('')}<th>Total</th><th>Reg</th><th>1.5×</th><th>2.0×</th></tr>
+${names.map(n=>`<tr><td>${esc(n)}</td><td>${esc(emp[n].role)}</td>${ks.map(k=>`<td>${emp[n].h[k]?f1(emp[n].h[k]):''}</td>`).join('')}<td><b>${f1(Object.values(emp[n].h).reduce((a,b)=>a+b,0))}</b></td><td>${f1(emp[n].r)}</td><td>${f1(emp[n].a)}</td><td>${f1(emp[n].b)}</td></tr>`).join('')||`<tr><td colspan="13" class="note">No time entries this week.</td></tr>`}
+<tr><th>Total</th><th></th>${dt.map(v=>`<th>${v?f1(v):''}</th>`).join('')}<th>${f1(dt.reduce((a,b)=>a+b,0))}</th>${['r','a','b'].map(k=>`<th>${f1(names.reduce((s,n)=>s+emp[n][k],0))}</th>`).join('')}</tr></table></div>
+<h2 style="margin-top:14px">Hours by Cost Code</h2><div class="wrap"><table><tr><th>Code</th><th>Description</th><th>Reg</th><th>1.5×</th><th>2.0×</th><th>Total</th></tr>${Object.keys(cc).sort().map(c=>{const d=(cfg.codes.find(x=>x.split('|')[0].trim()===c)||'').split('|')[1]||'';const v=cc[c];return `<tr><td>${esc(c)}</td><td>${esc(d.trim())}</td><td>${f1(v.r)}</td><td>${f1(v.a)}</td><td>${f1(v.b)}</td><td><b>${f1(v.r+v.a+v.b)}</b></td></tr>`}).join('')||'<tr><td colspan="6" class="note">No cost codes entered this week.</td></tr>'}</table></div>
+<p class="noprint"><button class="btn" data-csv>Export CSV</button> <button class="btn" onclick="print()">Print</button></p></div>`}
+function setupHTML(){const c=cfg;const F=(k,l)=>`<div><span class="lbl">${l}</span><input data-cfg="${k}" value="${esc(c[k])}"></div>`;
+ return `<div class="card"><h2>Project Info</h2><div class="g g2">${F('jobNo','Job Number')}${F('jobName','Job Name')}${F('super','Superintendent')}${F('pm','Project Manager')}${F('pe','Project Engineer')}${F('cf','Carpenter Foreman')}${F('lf','Laborer Foreman')}</div></div>
+<div class="card"><h2>Cost Codes</h2><p class="note">One per line as <b>code | description</b>, e.g. 03-300 | Cast-in-place concrete. They appear as suggestions on time cards.</p><textarea data-cfgcodes style="min-height:120px">${esc(c.codes.join('\n'))}</textarea></div>
+<div class="card"><h2>Weekly Subcontractor Template</h2><p class="note">One company per line — pre-fills the Subcontractors list on new reports (or use “Pre-fill from setup”).</p><textarea data-cfgsubs style="min-height:120px">${esc(c.subs.join('\n'))}</textarea></div>`}
+// events
+document.addEventListener('input',e=>{const t=e.target;
+ if(t.dataset.cfg){cfg[t.dataset.cfg]=t.value;saveCfg();return}
+ if(t.hasAttribute('data-cfgcodes')){cfg.codes=t.value.split('\n').map(s=>s.trim()).filter(Boolean);saveCfg();return}
+ if(t.hasAttribute('data-cfgsubs')){cfg.subs=t.value.split('\n').map(s=>s.trim()).filter(Boolean);saveCfg();return}
+ if(t.dataset.b){setp(t.dataset.b,t.value);saveDay();totals();if(t.hasAttribute('data-re'))totals()}});
+document.addEventListener('change',e=>{const t=e.target;
+ if(t.dataset.pr){day.present[t.dataset.pr]=t.checked;saveDay();totals()}
+ else if(t.dataset.bc){setp(t.dataset.bc,t.checked);saveDay()}
+ else if(t.id==='mediaUp')upload(t.files)});
+function setp(path,v){const p=path.split('.');let o=day;for(let i=0;i<p.length-1;i++)o=o[p[i]];o[p.at(-1)]=v}
+function getp(path){return path.split('.').reduce((o,k)=>o[k],day)}
+document.addEventListener('click',async e=>{const t=e.target.closest('button,img');if(!t)return;const D=t.dataset;
+ if(D.tab){tab=D.tab;render()}
+ else if(D.add){const k=D.add;day[k].push({subs:{name:'',count:'',rcv:false},insp:{name:'',count:''},vis:{name:'',count:''},events:{co:'',text:''},time:{emp:'',role:'Carpenters',start:'07:00',end:'15:30',brk:30,code:'',ot15:'',ot2:'',notes:''}}[k]);saveDay();render()}
+ else if(D.del){const p=D.del.split('.'),i=+p[1];const m=day[p[0]][i];if(p[0]==='media'){if(!confirm('Remove this file?'))return;if(m.path)try{await sb.storage.from('media').remove([m.path])}catch(x){}}day[p[0]].splice(i,1);saveDay();render()}
+ else if(D.prefill!==undefined){cfg.subs.forEach(n=>{if(!day.subs.some(s=>s.name===n))day.subs.push({name:n,count:'',rcv:false})});saveDay();render()}
+ else if(D.open)window.open(D.open,'_blank');
+ else if(D.csv)exportCsv()});
+async function upload(files){const n=$('#upn');for(const f of files){n.textContent='Uploading '+f.name+'…';
+ const path=$('#date').value+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,7)+'-'+f.name.replace(/[^\w.\-]/g,'_');
+ const{error}=await sb.storage.from('media').upload(path,f,{contentType:f.type});if(error){n.textContent='Upload failed: '+error.message;return}
+ day.media.push({path,name:f.name,video:f.type.startsWith('video'),cap:''});saveDay()}
+ n.textContent='';await signMedia();render()}
+async function exportCsv(){const ks=Object.keys(week);let rows=[['Date','Employee','Role','Cost Code','Start','End','Break','Total Hrs','Reg','OT 1.5x','OT 2.0x','Notes']];
+ ks.forEach(k=>(week[k]?.time||[]).forEach(t=>{const[r,a,b]=split(t);rows.push([k,t.emp,t.role,t.code,t.start,t.end,t.brk,f1(hrs(t)),f1(r),f1(a),f1(b),t.notes])}));
+ const csv=rows.map(r=>r.map(c=>`"${String(c??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+ if(downloads){try{await downloads.save({filename:'timesheet-'+ks[0]+'.csv',data:csv});return}catch(x){}}
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='timesheet.csv';a.click()}
+let manual=false;
+$('#date').addEventListener('change',()=>{manual=$('#date').value!==iso(new Date());loadDay()});
+$('#today').addEventListener('click',()=>{manual=false;$('#date').value=iso(new Date());loadDay()});
+function syncToday(){const t=iso(new Date());if(!manual&&$('#date').value!==t){$('#date').value=t;loadDay()}}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncToday()});addEventListener('focus',syncToday);setInterval(syncToday,60000);
+async function start(){$('#login').style.display='none';ready=true;const saved=await get('config/project');if(saved)Object.assign(cfg,saved);cfg.subs=cfg.subs||[];cfg.codes=cfg.codes||[];if(!cfg.jobNo)tab='set';await loadDay();status('Synced')}
+$('#go').onclick=async()=>{const{error}=await sb.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});if(error)$('#lerr').textContent=error.message;else start()};
+$('#pw').addEventListener('keydown',e=>{if(e.key==='Enter')$('#go').click()});
+$('#out').onclick=async()=>{await sb.auth.signOut();location.reload()};
+(async()=>{$('#date').value=iso(new Date());
+ if(SUPABASE_URL.startsWith('YOUR')||!window.supabase){document.body.innerHTML='<p style="padding:20px">Set SUPABASE_URL and SUPABASE_KEY at the top of the script (see SETUP.md).</p>';return}
+ sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+ const{data:{session}}=await sb.auth.getSession();
+ if(session)start();else $('#login').style.display='flex'})();
+</script></body></html>
